@@ -1,0 +1,8 @@
+node_modules/
+client/dist/
+*.log
+.DS_Store
+
+# local-only
+.claude/settings.local.json
+colony-sort_*.pdf
