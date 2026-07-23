@@ -89,6 +89,19 @@ test('a student starts the sprint on join, gets the Round 1 intro and the first 
   assert.equal(turn.buckets.length, 3);
 });
 
+test('the teacher sees "in_progress" on the VERY FIRST lobby:update, not a stale "not_started"', () => {
+  // Regression: joinStudent used to snapshot the roster before the solo match
+  // started, so the teacher's only lobby:update for an auto-start solo join
+  // showed the student as not_started until they later completed.
+  const manager = new GameManager();
+  const joinCode = makeSession(manager);
+  const res = join(manager, joinCode, 'Ana');
+  const lobbyPushes = eventsOf(res.emits, 'lobby:update');
+  assert.equal(lobbyPushes.length, 1, 'one roster push on join');
+  const me = lobbyPushes[0].payload.students.find((s) => s.id === res.studentId);
+  assert.equal(me.status, 'in_progress', 'the roster already reflects the match that just started');
+});
+
 test('playing all 30 right earns 100% and a Gold medal, with an empty miss list', () => {
   const manager = new GameManager();
   const joinCode = makeSession(manager);
