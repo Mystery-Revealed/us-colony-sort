@@ -95,8 +95,14 @@ export default function SortView({ state, dispatch }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAct]);
 
-  // Prefer whichever round info is freshest; falls back gracefully at the seams.
-  const headerRound = turn?.round || roundCard?.round;
+  // The engine batches the next round's card+turn together with this round's
+  // LAST turn:resolution — turn/roundCard have both already raced ahead by
+  // the time this feedback renders. Pin the header to the last round seen
+  // before feedback started so it doesn't read "Round 2" over a Round 1
+  // verdict.
+  const settledRoundRef = useRef(null);
+  if (!feedback) settledRoundRef.current = turn?.round || roundCard?.round || settledRoundRef.current;
+  const headerRound = feedback ? (settledRoundRef.current || turn?.round || roundCard?.round) : (turn?.round || roundCard?.round);
   const chosenIndex = feedback ? buckets.findIndex((b) => b.key === feedback.chosenKey) : -1;
   const correctIndex = feedback ? feedback.correctIndex : -1;
   const hideFlame = feedback?.serious;
@@ -116,10 +122,10 @@ export default function SortView({ state, dispatch }) {
       </header>
 
       <div className="sort-stage">
-        {roundCard ? (
-          <RoundIntro roundCard={roundCard} onGo={() => dispatch({ type: 'dismiss-round' })} />
-        ) : feedback ? (
+        {feedback ? (
           <FeedbackStrip feedback={feedback} />
+        ) : roundCard ? (
+          <RoundIntro roundCard={roundCard} onGo={() => dispatch({ type: 'dismiss-round' })} />
         ) : turn ? (
           <SortCard key={turn.stepIndex} turn={turn} bucketRefs={bucketRefs} onSubmit={submit} busy={submitting} />
         ) : (
