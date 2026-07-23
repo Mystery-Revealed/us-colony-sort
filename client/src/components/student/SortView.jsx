@@ -28,6 +28,11 @@ export default function SortView({ state, dispatch }) {
 
   const [streak, setStreak] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous double-click lock. State alone can't stop two clicks landing in
+  // the same render frame (both read the stale `submitting === false`), and the
+  // second would be graded by the server against the NEXT card. The ref engages
+  // immediately; `submitting` still drives the disabled styling.
+  const submitLock = useRef(false);
   const [err, setErr] = useState('');
   const seenFeedback = useRef(null);
   const bucketRefs = useRef([]);
@@ -38,8 +43,18 @@ export default function SortView({ state, dispatch }) {
     if (seenFeedback.current === feedback.stepIndex) return;
     seenFeedback.current = feedback.stepIndex;
     setStreak((s) => (feedback.verdict === 'right' ? s + 1 : 0));
+    submitLock.current = false;
     setSubmitting(false);
   }, [feedback]);
+
+  // Belt-and-suspenders for the submit lock: a new card arriving (normal flow,
+  // or a post-reconnect sync after a lost push) always releases it. Harmless
+  // mid-feedback — canAct stays false until the feedback dismisses, and
+  // submit() re-checks `canAct` before the lock matters.
+  useEffect(() => {
+    submitLock.current = false;
+    setSubmitting(false);
+  }, [turn?.stepIndex]);
 
   // Auto-advance: a quick pulse on right, a longer 2.5s read on wrong — never a
   // button the student must hunt for; ring expiry never triggers this (spec §3).
@@ -53,15 +68,20 @@ export default function SortView({ state, dispatch }) {
   const canAct = !!turn && !feedback && !roundCard && !submitting;
 
   async function submit(idx) {
-    if (!canAct) return;
+    if (submitLock.current || !canAct) return;
+    submitLock.current = true;
     setSubmitting(true);
     setErr('');
     const res = await emitAck('student:submit_move', { move: { kind: 'sort', choiceIndex: idx } });
+    // Deliberately NOT unlocked on success: the ack arrives BEFORE the
+    // turn:resolution push, and unlocking here would reopen a window where a
+    // second tap submits against the NEXT card (server cursor has already
+    // advanced). The feedback/turn effects above release the lock.
     if (!res.ok) {
+      submitLock.current = false;
       setErr(errorText(res.error));
       setSubmitting(false);
     }
-    // On success the server pushes turn:resolution; the effect above clears `submitting`.
   }
 
   // Keyboard 1 / 2 / 3 — always available while a card is live (spec §6).
